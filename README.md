@@ -23,6 +23,8 @@ pgvector) · LLM Routing agnóstico (Anthropic / OpenAI).
 - `src/lib/security/verifyWebhook.ts` — verificación HMAC de webhooks.
 - `docs/ARCHITECTURE.md` — diseño y árbol de directorios completo.
 - `docs/SECURITY.md` — manejo seguro de tokens OAuth y datos sensibles.
+- `docs/BUDGET.md` — presupuesto para llevar el MVP a un piloto validado
+  (infraestructura, unit economics de IA, mano de obra).
 
 ## Puesta en marcha
 
