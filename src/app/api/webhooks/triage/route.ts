@@ -2,6 +2,9 @@ import { z } from 'zod';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { verifyHmacSignature } from '@/lib/security/verifyWebhook';
 import { triageMessage } from '@/lib/ai/triage';
+import { draftReply } from '@/lib/ai/reply';
+import { extractAppointment } from '@/lib/ai/scheduling';
+import { proposeAppointment, proposeReply } from '@/lib/scheduling';
 import {
   loadPreferences,
   recordMessage,
@@ -90,6 +93,54 @@ export async function POST(req: Request): Promise<Response> {
       });
     }
 
+    // 6) Acciones derivadas de la categoría --------------------------------
+    // spam_info -> nada más (ya quedó como 'archived').
+    // routine_faq / complex_vip -> detectar cita y/o preparar respuesta.
+    let scheduledApprovalId: string | null = null;
+    let replyApprovalId: string | null = null;
+
+    if (result.category !== 'spam_info') {
+      // 6a) ¿Es una solicitud de cita? Se propone al usuario, no se agenda solo.
+      const sched = await extractAppointment(msg, new Date().toISOString());
+      await recordTokenUsage(db, {
+        userId: msg.userId,
+        messageId,
+        stage: 'draft',
+        completion: sched.completion,
+        latencyMs: 0,
+      });
+
+      if (sched.extraction.isRequest && sched.extraction.confidence >= 0.5) {
+        const proposed = await proposeAppointment(db, {
+          msg,
+          messageId,
+          extraction: sched.extraction,
+        });
+        scheduledApprovalId = proposed.approvalId;
+      } else {
+        // 6b) No es cita: redactar respuesta. Siempre encolada para aprobar.
+        const stage = result.category === 'complex_vip' ? 'escalation' : 'draft';
+        const { draft, completion: replyCompletion } = await draftReply(
+          msg,
+          prefs,
+          result.category,
+        );
+        await recordTokenUsage(db, {
+          userId: msg.userId,
+          messageId,
+          stage,
+          completion: replyCompletion,
+          latencyMs: 0,
+        });
+        replyApprovalId = await proposeReply(db, {
+          userId: msg.userId,
+          messageId,
+          draft,
+          sender: msg.sender,
+        });
+      }
+    }
+
     return json({
       status: 'ok',
       messageId,
@@ -97,6 +148,8 @@ export async function POST(req: Request): Promise<Response> {
       action: result.suggestedAction,
       confidence: result.confidence,
       reasoning: result.reasoning,
+      scheduledApprovalId,
+      replyApprovalId,
     });
   } catch (err) {
     console.error('Triage pipeline error:', err);

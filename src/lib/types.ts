@@ -52,3 +52,66 @@ export interface TokenUsage {
   inputTokens: number;
   outputTokens: number;
 }
+
+// ---------------------------------------------------------------------------
+// Canales y conexiones (multicanal)
+// ---------------------------------------------------------------------------
+
+export type ChannelProvider = 'gmail' | 'outlook' | 'whatsapp';
+
+export type ConnectionStatus = 'active' | 'revoked' | 'error';
+
+// ---------------------------------------------------------------------------
+// Agendado de citas
+// ---------------------------------------------------------------------------
+
+export type AppointmentStatus =
+  | 'proposed' // el asistente detectó una solicitud de cita
+  | 'awaiting_user' // esperando decisión del humano
+  | 'confirmed' // agendada en plataforma + calendario del usuario
+  | 'declined' // el usuario la rechazó
+  | 'cancelled';
+
+/** Intención de cita extraída de un mensaje por el modelo. */
+export interface AppointmentExtraction {
+  isRequest: boolean;
+  title?: string;
+  /** ISO 8601 con zona; null si el modelo no logró resolver la fecha. */
+  startsAt?: string | null;
+  endsAt?: string | null;
+  location?: string | null;
+  confidence: number;
+  reasoning: string;
+}
+
+// ---------------------------------------------------------------------------
+// Cola de aprobaciones (human-in-the-loop)
+// ---------------------------------------------------------------------------
+
+export type ApprovalKind = 'schedule_appointment' | 'send_reply';
+
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'expired';
+
+// ---------------------------------------------------------------------------
+// Asistente conversacional (comandos por voz/texto)
+// ---------------------------------------------------------------------------
+
+export type InputModality = 'text' | 'voice';
+
+export type AssistantRole = 'user' | 'assistant' | 'tool';
+
+/** Intención resuelta a partir de un comando del usuario. */
+export type AssistantIntent =
+  | 'compose_message' // "escríbele a X para reunirnos el sábado"
+  | 'search_messages' // "¿me enviaron el reporte esta semana?"
+  | 'schedule' // "agéndame con Y el viernes a las 3"
+  | 'answer'; // pregunta general / conversación
+
+export interface AssistantPlan {
+  intent: AssistantIntent;
+  /** Respuesta en lenguaje natural para el usuario. */
+  reply: string;
+  /** Parámetros estructurados de la acción, según el intent. */
+  params: Record<string, unknown>;
+  confidence: number;
+}
