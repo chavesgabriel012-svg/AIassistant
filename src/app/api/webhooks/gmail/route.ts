@@ -1,46 +1,90 @@
 import { z } from 'zod';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { forwardToTriage } from '@/lib/channels/forwardToTriage';
+import { findConnectionByAccount } from '@/lib/channels/connections';
+import {
+  getMessage,
+  getValidAccessToken,
+  listNewMessageIds,
+} from '@/lib/channels/gmail/api';
 
 /**
- * Adaptador de ingesta: Gmail Push (Pub/Sub) -> mensaje canónico -> Triage.
+ * Webhook de Gmail (Pub/Sub push). Resuelve el correo real y lo reenvía al
+ * Triage Engine ya normalizado.
  *
- * Traduce el formato específico de Gmail al `IncomingMessage` canónico y lo
- * reenvía firmado. Cada canal nuevo es un adaptador análogo, sin tocar el motor.
+ * Flujo:
+ *   1. Decodifica el push { emailAddress, historyId }.
+ *   2. Ubica la conexión del usuario dueño de esa cuenta.
+ *   3. Con su token (refresh automático) lista los mensajes nuevos desde el
+ *      último historyId sincronizado y los baja.
+ *   4. Reenvía cada uno como IncomingMessage (con datos de hilo para responder).
+ *   5. Avanza el historyId de la conexión.
  *
- * Nota: resolver el historyId de Gmail a un mensaje concreto (users.messages.get)
- * y mapear emailAddress -> userId se omiten aquí por brevedad (ver TODO).
+ * Responde 2xx rápido siempre: Pub/Sub reintentará si devolvemos error.
  */
 export const runtime = 'edge';
 
-const gmailPushSchema = z.object({
-  message: z.object({ data: z.string() }),
-});
+const pushSchema = z.object({ message: z.object({ data: z.string() }) });
 
 export async function POST(req: Request): Promise<Response> {
   const body = await req.json().catch(() => null);
-  const parsed = gmailPushSchema.safeParse(body);
+  const parsed = pushSchema.safeParse(body);
   if (!parsed.success) return new Response('Bad Request', { status: 400 });
 
-  // Gmail Pub/Sub: { emailAddress, historyId } en base64.
-  const decoded = JSON.parse(atob(parsed.data.message.data)) as {
+  const notification = JSON.parse(atob(parsed.data.message.data)) as {
     emailAddress: string;
     historyId: string;
   };
 
-  // TODO: mapear emailAddress -> userId y resolver el mensaje real vía Gmail API
-  //       con el token OAuth cifrado del usuario (ver docs/SECURITY.md).
-  const res = await forwardToTriage(
-    {
-      userId: '00000000-0000-0000-0000-000000000000',
-      channel: 'email',
-      externalId: decoded.historyId,
-      sender: decoded.emailAddress,
-      subject: '(resolver vía Gmail API)',
-      body: '(resolver vía Gmail API)',
-    },
-    req.url,
-  );
+  const db = createAdminClient();
+  const connection = await findConnectionByAccount(db, 'gmail', notification.emailAddress);
+  if (!connection) {
+    // No conocemos esa cuenta: ack para que Pub/Sub no reintente en bucle.
+    return new Response(null, { status: 204 });
+  }
 
-  // Gmail espera 2xx rápido para no reintentar.
-  return new Response(null, { status: res.ok ? 204 : 502 });
+  try {
+    const accessToken = await getValidAccessToken(db, connection.id);
+
+    // Sin historyId previo (primera notificación): solo fijamos el cursor.
+    if (!connection.last_history_id) {
+      await db
+        .from('channel_connections')
+        .update({ last_history_id: notification.historyId, last_synced_at: new Date().toISOString() })
+        .eq('id', connection.id);
+      return new Response(null, { status: 204 });
+    }
+
+    const ids = await listNewMessageIds(accessToken, connection.last_history_id);
+
+    for (const id of ids) {
+      const mail = await getMessage(accessToken, id);
+      await forwardToTriage(
+        {
+          userId: connection.user_id,
+          channel: 'email',
+          externalId: mail.id,
+          sender: mail.from,
+          subject: mail.subject,
+          body: mail.body,
+          connectionId: connection.id,
+          providerThreadId: mail.threadId,
+          providerMessageId: mail.rfc822MessageId,
+        },
+        req.url,
+      );
+    }
+
+    // Avanzar el cursor de sincronización.
+    await db
+      .from('channel_connections')
+      .update({ last_history_id: notification.historyId, last_synced_at: new Date().toISOString() })
+      .eq('id', connection.id);
+
+    return new Response(null, { status: 204 });
+  } catch (e) {
+    console.error('Gmail webhook error:', e);
+    // 500 => Pub/Sub reintenta más tarde (p. ej. historyId caducado).
+    return new Response('Retry', { status: 500 });
+  }
 }

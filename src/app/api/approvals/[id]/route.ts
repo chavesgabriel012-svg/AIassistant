@@ -1,16 +1,17 @@
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { createServerSupabase } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { getValidAccessToken, sendReply } from '@/lib/channels/gmail/api';
 
 /**
  * Decisión sobre una acción encolada (human-in-the-loop).
  *
  *   PATCH /api/approvals/:id   body: { decision: 'approved' | 'rejected' }
  *
- * - approved + schedule_appointment -> confirma la cita y la escribe al
- *   calendario del usuario (Google/Microsoft). *Ejecución real: TODO.*
- * - approved + send_reply -> envía la respuesta por el canal de origen. TODO.
- * - rejected -> marca la acción/ cita como rechazada (y, si aplica, prepara un
- *   mensaje cortés de "no puedo").
+ * - approved + send_reply -> ENVÍA la respuesta por Gmail, en el mismo hilo.
+ * - approved + schedule_appointment -> confirma la cita (escritura al
+ *   calendario del usuario: TODO, requiere scope de Google Calendar).
+ * - rejected -> marca la acción/cita como rechazada.
  *
  * La identidad se toma de la sesión; RLS impide tocar aprobaciones ajenas.
  */
@@ -45,10 +46,15 @@ export async function PATCH(
 
   const db = createAdminClient(); // ejecutar la acción requiere service_role.
 
-  if (decision === 'approved') {
-    await executeApproved(db, user.id, approval);
-  } else {
-    await executeRejected(db, approval);
+  try {
+    if (decision === 'approved') {
+      await executeApproved(db, approval);
+    } else {
+      await executeRejected(db, approval);
+    }
+  } catch (e) {
+    console.error('Fallo al ejecutar la acción aprobada:', e);
+    return json({ error: 'No se pudo ejecutar la acción.', detail: String(e) }, 502);
   }
 
   await db
@@ -59,38 +65,78 @@ export async function PATCH(
   return json({ id: approval.id, status: decision });
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function executeApproved(db: any, userId: string, approval: any) {
+interface ApprovalRow {
+  id: string;
+  kind: string;
+  appointment_id: string | null;
+  message_id: string | null;
+  payload: { draft?: string } & Record<string, unknown>;
+}
+
+async function executeApproved(db: SupabaseClient, approval: ApprovalRow) {
+  if (approval.kind === 'send_reply') {
+    await sendGmailReply(db, approval);
+    return;
+  }
+
   if (approval.kind === 'schedule_appointment' && approval.appointment_id) {
-    // TODO: crear el evento en el calendario del usuario usando el token OAuth
-    //       cifrado (decryptToken) del proveedor conectado, y guardar el
-    //       external_calendar_event_id devuelto.
+    // TODO: crear el evento en Google Calendar con el token del usuario
+    //       (requiere scope calendar.events) y guardar external_calendar_event_id.
     await db
       .from('appointments')
       .update({ status: 'confirmed' })
       .eq('id', approval.appointment_id);
   }
-
-  if (approval.kind === 'send_reply') {
-    // TODO: enviar `approval.payload.draft` por el canal de origen del mensaje
-    //       (Gmail/Outlook/WhatsApp) con las credenciales del usuario.
-    if (approval.message_id) {
-      await db
-        .from('messages')
-        .update({ action: 'auto_replied' })
-        .eq('id', approval.message_id);
-    }
-  }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function executeRejected(db: any, approval: any) {
+/** Envía por Gmail el borrador aprobado, respondiendo en el hilo original. */
+async function sendGmailReply(db: SupabaseClient, approval: ApprovalRow) {
+  const draft = approval.payload?.draft;
+  if (!draft || !approval.message_id) {
+    throw new Error('Falta el borrador o el mensaje original.');
+  }
+
+  // Datos del mensaje original para responder en el hilo correcto.
+  const { data: message } = await db
+    .from('messages')
+    .select('sender, subject, thread_id, rfc822_message_id, connection_id, channel')
+    .eq('id', approval.message_id)
+    .maybeSingle();
+
+  if (!message || message.channel !== 'email' || !message.connection_id) {
+    throw new Error('El mensaje no es un correo con conexión asociada.');
+  }
+
+  // Cuenta desde la que se responde.
+  const { data: conn } = await db
+    .from('channel_connections')
+    .select('external_account')
+    .eq('id', message.connection_id)
+    .maybeSingle();
+  if (!conn) throw new Error('Conexión de correo no encontrada.');
+
+  const accessToken = await getValidAccessToken(db, message.connection_id);
+  await sendReply(accessToken, {
+    from: conn.external_account,
+    to: message.sender ?? '',
+    subject: message.subject ?? '(sin asunto)',
+    body: draft,
+    threadId: message.thread_id ?? '',
+    inReplyTo: message.rfc822_message_id ?? undefined,
+  });
+
+  await db
+    .from('messages')
+    .update({ action: 'auto_replied' })
+    .eq('id', approval.message_id);
+}
+
+async function executeRejected(db: SupabaseClient, approval: ApprovalRow) {
   if (approval.kind === 'schedule_appointment' && approval.appointment_id) {
     await db
       .from('appointments')
       .update({ status: 'declined' })
       .eq('id', approval.appointment_id);
-    // TODO (opcional): encolar un send_reply cortés declinando la cita.
   }
 }
 

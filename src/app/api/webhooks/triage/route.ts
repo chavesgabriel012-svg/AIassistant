@@ -35,6 +35,9 @@ const payloadSchema = z.object({
   sender: z.string().optional(),
   subject: z.string().optional(),
   body: z.string().min(1),
+  connectionId: z.string().uuid().optional(),
+  providerThreadId: z.string().optional(),
+  providerMessageId: z.string().optional(),
 });
 
 export async function POST(req: Request): Promise<Response> {
