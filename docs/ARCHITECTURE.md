@@ -56,30 +56,69 @@
 │   └── SECURITY.md
 ├── supabase/
 │   └── migrations/
-│       └── 0001_initial_schema.sql      # tablas + RLS + triggers + vista
+│       ├── 0001_initial_schema.sql       # users, prefs, messages, token logs + RLS
+│       └── 0002_channels_scheduling_assistant.sql  # canales, citas, aprobaciones, chat
 └── src/
     ├── app/
     │   ├── layout.tsx
-    │   ├── page.tsx                      # landing
+    │   ├── page.tsx                       # landing
     │   ├── globals.css
     │   └── api/
-    │       └── webhooks/
-    │           ├── triage/route.ts       # ★ Triage Engine (Edge)
-    │           └── gmail/route.ts        # adaptador de ingesta (ejemplo)
+    │       ├── webhooks/
+    │       │   ├── triage/route.ts        # ★ Triage Engine (Edge)
+    │       │   ├── gmail/route.ts         # adaptador de ingesta (Gmail)
+    │       │   ├── outlook/route.ts       # adaptador de ingesta (Graph)
+    │       │   └── whatsapp/route.ts      # adaptador de ingesta (Meta Cloud API)
+    │       ├── assistant/
+    │       │   └── command/route.ts       # comandos por voz/texto (Node)
+    │       └── approvals/
+    │           └── [id]/route.ts          # aprobar/rechazar (human-in-the-loop)
     └── lib/
-        ├── types.ts                      # tipos del dominio
-        ├── audit.ts                      # persistencia + rate limiting
+        ├── types.ts                       # tipos del dominio
+        ├── audit.ts                       # persistencia + rate limiting
+        ├── scheduling.ts                  # citas y aprobaciones (capa de datos)
         ├── security/
-        │   └── verifyWebhook.ts          # HMAC (Web Crypto, Edge-safe)
+        │   ├── verifyWebhook.ts           # HMAC (Web Crypto, Edge-safe)
+        │   └── tokenCrypto.ts             # cifrado AES-256-GCM de tokens OAuth
+        ├── channels/
+        │   └── forwardToTriage.ts         # helper firma+reenvío de adaptadores
         ├── supabase/
-        │   ├── admin.ts                  # service_role (server/edge)
-        │   └── client.ts                 # anon (browser, RLS)
+        │   ├── admin.ts                   # service_role (server/edge)
+        │   ├── server.ts                  # sesión de usuario (RLS, Node)
+        │   └── client.ts                  # anon (browser, RLS)
         └── ai/
-            ├── router.ts                 # LLM Routing agnóstico
-            ├── prompts.ts                # prompts de triaje
-            ├── triage.ts                 # núcleo del triaje + parsing
-            └── pricing.ts                # estimación de costo por token
+            ├── router.ts                  # LLM Routing agnóstico
+            ├── prompts.ts                 # prompts de triaje
+            ├── triage.ts                  # núcleo del triaje + parsing
+            ├── reply.ts                   # redacción de respuestas (cat. 2/3)
+            ├── scheduling.ts              # extracción de intención de cita
+            ├── assistant.ts               # intérprete de comandos
+            ├── transcribe.ts              # voz -> texto (Whisper)
+            ├── json.ts                    # parseo robusto de JSON del modelo
+            └── pricing.ts                 # estimación de costo por token
 ```
+
+## 5. Flujos de las features del MVP
+
+### Filtrado + respuesta (human-in-the-loop)
+`triage` clasifica → si no es spam, intenta extraer cita; si no es cita, redacta
+respuesta. Nada se envía solo: los borradores se encolan en `action_approvals`.
+El usuario aprueba/rechaza vía `PATCH /api/approvals/:id`.
+
+### Agendado de citas
+`extractAppointment` normaliza fecha/hora → `proposeAppointment` crea la cita en
+`awaiting_user` + una aprobación. Al aprobar, se confirma y se escribe al
+calendario del usuario (Google/Microsoft) con su token OAuth cifrado.
+
+### Comandos por voz/texto
+`POST /api/assistant/command` (Node) transcribe si es voz (Whisper) →
+`interpretCommand` resuelve intención y parámetros → acciones que envían/agendan
+quedan como aprobación pendiente antes de ejecutarse.
+
+### Multicanal
+Un adaptador por canal (`gmail`/`outlook`/`whatsapp`) normaliza al
+`IncomingMessage` canónico y delega en el motor vía `forwardToTriage`. Los
+tokens OAuth se guardan cifrados en `oauth_tokens` (tabla backend-only).
 
 ### Convenciones de escalabilidad
 
