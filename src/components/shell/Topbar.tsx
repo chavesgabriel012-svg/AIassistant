@@ -10,7 +10,7 @@ export function Topbar({ user, approvals }: { user: UiUser; approvals: number })
   const greeting = hour < 12 ? 'Buenos días' : hour < 19 ? 'Buenas tardes' : 'Buenas noches';
 
   return (
-    <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-border bg-bg/80 px-4 py-3 backdrop-blur md:px-6">
+    <header className="app-titlebar sticky top-0 z-30 flex items-center gap-3 border-b border-border bg-bg/80 px-4 py-3 backdrop-blur md:px-6">
       <div className="flex items-center gap-2 md:hidden">
         <Shield className="h-5 w-5 text-accent" />
         <span className="font-semibold">Escudo</span>

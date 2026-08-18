@@ -62,6 +62,26 @@ body {
   border-radius: 8px;
 }
 
+/* ---- Window Controls Overlay (app instalada en escritorio) --------------
+   Cuando la PWA reclama la barra de título, la barra superior se vuelve la
+   "titlebar": arrastrable y despejada de los botones del sistema (min/max/cerrar). */
+@media (display-mode: window-controls-overlay) {
+  .app-titlebar {
+    -webkit-app-region: drag;
+    app-region: drag;
+    /* Deja libre el espacio de los controles del SO (izq. en macOS, der. en Windows). */
+    padding-left: env(titlebar-area-x, 1rem);
+    padding-right: calc(100vw - env(titlebar-area-width, 100vw) - env(titlebar-area-x, 0px));
+  }
+  /* Los elementos interactivos no deben arrastrar la ventana. */
+  .app-titlebar button,
+  .app-titlebar a,
+  .app-titlebar input {
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+  }
+}
+
 @layer components {
   .card {
     @apply rounded-2xl border border-border bg-surface;
