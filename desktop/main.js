@@ -16,8 +16,8 @@ const fs = require('node:fs');
  * (útil para desarrollo: ESCUDO_APP_URL=http://localhost:3000).
  */
 
-// TODO: reemplazar por tu dominio de producción real de Vercel.
-const DEFAULT_URL = 'https://aiassistant-eight-lyart.vercel.app';
+// Dominio de producción (Vercel).
+const DEFAULT_URL = 'https://a-iassistant-phi.vercel.app';
 const APP_URL = process.env.ESCUDO_APP_URL || DEFAULT_URL;
 const APP_ORIGIN = safeOrigin(APP_URL);
 
