@@ -1,226 +1,201 @@
-# Plan de acción para el MVP — Escudo Digital
+# Plan de acción del MVP — modelo bootstrap ($300 → Founders → Producción)
 
-> Objetivo: llevar lo que ya existe (arquitectura + frontend con datos mock +
-> canal Gmail codificado + app de escritorio) a un **MVP usable por clientes
-> reales**, con lo mínimo indispensable. Nada de lujos.
+> Estrategia: construir el producto **100% funcional** (3 canales + móvil) con un
+> presupuesto inicial de **~$300** —que se va casi todo en APIs, que son
+> baratas—, lanzar un **Plan Founders** (≈30 personas pagando) para **validar y
+> financiar**, y con ese dinero pagar lo caro (verificación de Google, apps
+> nativas de tienda) o salir a buscar inversión.
 
-Todas las cifras de costo son **estimadas en USD y cambian con el tiempo**;
-sirven para presupuestar, no como precio exacto.
-
----
-
-## 1. Estado actual (lo que YA está hecho)
-
-- ✅ Arquitectura backend: esquema Supabase (RLS), triage engine, LLM routing,
-  auditoría de tokens, cifrado de tokens OAuth.
-- ✅ Canal Gmail **codificado** de punta a punta (OAuth, push, refresh, envío).
-- ✅ Adaptadores Outlook/WhatsApp como *stubs*.
-- ✅ Frontend completo (PWA) con **datos mock** detrás de una capa de datos
-  reemplazable: Inicio, Bandeja, Enviados, Prospectos, Agenda, Reglas, Config.
-- ✅ App de escritorio nativa (Electron) para Windows/macOS/Linux.
-
-**Lo que falta es, sobre todo: conectar todo con datos reales, pulir y lanzar.**
+Cifras en USD, **estimadas** (cambian con el tiempo). Sirven para presupuestar.
 
 ---
 
-## 2. Alcance del MVP (lean)
+## 1. ¿Alcanzan $300 para los 3 canales + app móvil? Sí, con matices
 
-Para no dispersarnos, el MVP se enfoca en **UN canal bien hecho** y crece después.
+La clave: **lo caro de este producto es tiempo y trámites, no plata.** Casi todos
+los servicios tienen plan gratuito o cobran por uso (y el uso en beta es bajo).
 
-**Dentro del MVP:**
-- **Gmail** como canal principal (leer, clasificar, responder, agendar).
-- Web (Vercel) + **App de escritorio** + **PWA instalable en móvil**.
-- Autenticación real, datos reales, aprobaciones que ejecutan de verdad.
-- Beta cerrada (modo "testing" de Google → hasta 100 usuarios, sin verificación).
-
-**Fuera del MVP (fase siguiente, ya planificado abajo):**
-- WhatsApp y Outlook en vivo.
-- App móvil nativa en tiendas (Capacitor).
-- Verificación de Google + CASA (para pasar de 100 usuarios).
-- Cobros con Stripe (el MVP arranca gratis / por invitación).
-
----
-
-## 3. Plan por fases
-
-### Fase 0 — Marca, cuentas y legales (decisiones + trámites)
-Lo que hay que **decidir y crear** antes de codear el resto.
-
-- [ ] **Nombre definitivo.** Hoy usamos "Escudo Digital" como provisional.
-      Verificar que el nombre esté libre (dominio + redes + marca).
-- [ ] **Dominio.** Comprar `.com` (o `.cr`). Ideal para correos y para la URL
-      de producción (reemplaza `a-iassistant-phi.vercel.app`).
-- [ ] **Logo + identidad básica.** Ya hay un ícono (escudo + check) y paleta.
-      Para el MVP basta con: logotipo (wordmark), ícono de app, favicon,
-      1 color primario. Se puede hacer DIY o con un freelancer económico.
-- [ ] **Correo de soporte** (ej. `hola@tudominio.com`).
-- [ ] **Legales mínimos (obligatorios para Gmail y tiendas):**
-      Política de Privacidad + Términos + cumplimiento de la **Limited Use
-      Policy de Google** (declarar que los datos de Gmail no se usan para
-      entrenar modelos ni se venden). Se puede partir de plantillas.
-- [ ] **Cuentas de desarrollador:** Google Cloud (ya), y más adelante Apple
-      Developer y Google Play (para móvil).
-
-### Fase 1 — Autenticación + datos reales (mock → Supabase)
-El corazón de "dejar de ser una demo".
-
-- [ ] **Aplicar las 3 migraciones** en el proyecto Supabase real.
-- [ ] **Supabase Auth**: login con correo y con **"Iniciar sesión con Google"**.
-      Reemplazar el usuario mock (`@gabriel`) por el usuario real.
-- [ ] **Proteger rutas**: middleware que exige sesión; pantallas de login/registro.
-- [ ] **Implementar `src/lib/data/supabase.ts`** con las mismas firmas que el
-      mock y cambiar el import en `src/lib/data/index.ts`. Con eso, **toda la UI
-      pasa a datos reales sin tocar componentes**.
-- [ ] Wire de los 4 puntos marcados con TODO:
-  - CommandBar → `POST /api/assistant/command`.
-  - ApprovalsFeed → `PATCH /api/approvals/:id`.
-  - Reglas → leer/guardar `user_preferences`.
-  - Botón "Conectar" → `/api/oauth/gmail/start`.
-
-### Fase 2 — Gmail en vivo + motor de IA real
-Que el asistente haga su trabajo de verdad, sobre una bandeja real.
-
-- [ ] **Onboarding de canal**: conectar Gmail, guardar tokens cifrados, iniciar
-      `watch`.
-- [ ] **Cron de renovación del `watch`** (Vercel Cron, cada ~6 días) — sin esto
-      el push de Gmail deja de llegar a la semana.
-- [ ] **Verificar el JWT** del push de Pub/Sub (seguridad).
-- [ ] **Pipeline real**: triaje (Haiku) → redacción → cola de aprobaciones →
-      **envío real** al aprobar. (El código ya existe; hay que probarlo con
-      correos reales y afinar prompts.)
-- [ ] **Agendado**: al aprobar, crear el evento en **Google Calendar** (añade el
-      scope `calendar.events`). Alternativa MVP: crear la cita en la app y
-      notificar, y dejar el calendario para después.
-- [ ] **Reglas del usuario** aplicándose de verdad (VIP, bloqueados, tono).
-- [ ] **Límites/rate limiting** por presupuesto mensual (ya codificado, activarlo).
-
-### Fase 3 — Pulido de UI/UX y confiabilidad
-Lo que hace que se sienta un producto, no un prototipo.
-
-- [ ] **Onboarding** de primer uso: "Conectá tu Gmail" → tour de 3 pasos.
-- [ ] **Estados vacíos, de carga y de error** en cada pantalla (hoy asumen datos).
-- [ ] **Notificaciones** cuando algo se eleva al humano: push web/escritorio
-      (el service worker ya tiene el handler; falta VAPID + servidor de push).
-- [ ] **Detalle de mensaje**: abrir un correo, ver hilo, editar el borrador
-      antes de aprobar (hoy solo se aprueba/descarta).
-- [ ] **Responsivo y accesibilidad** básicos; revisar en móvil real.
-- [ ] **Logo/ícono/favicon finales** aplicados; textos revisados.
-- [ ] **Manejo de errores** de la API de Gmail (token revocado, cuota, etc.).
-- [ ] **Analítica mínima** (ej. Vercel Analytics) para ver uso.
-
-### Fase 4 — Beta cerrada (lanzamiento del MVP)
-- [ ] App de Google en **modo "testing"**: hasta **100 usuarios** sin verificación
-      (ven un aviso de "app no verificada", aceptable en beta). **Costo: $0.**
-- [ ] Invitar a 5–15 usuarios reales (ejecutivos / corredores) y recoger feedback.
-- [ ] **Revisión de seguridad** antes de tocar correos reales de terceros.
-- [ ] Iterar sobre el triaje con casos reales.
-
-### Fase 5 — Post-MVP inmediato (escalar)
-Cuando la beta valide la propuesta.
-
-- [ ] **Verificación de Google + CASA** (obligatorio para >100 usuarios con el
-      scope `gmail.modify`). **Es el mayor costo recurrente** — ver §5.
-- [ ] **WhatsApp Cloud API** en vivo (verificación de negocio de Meta + número).
-- [ ] **Outlook** en vivo (registro de app en Azure AD).
-- [ ] **App móvil nativa** con **Capacitor** (reusa esta misma web) → tiendas.
-- [ ] **Firma de código** del escritorio (Windows + macOS) y **auto-update**
-      del binario con `electron-updater`.
-- [ ] **Cobros con Stripe** (planes free / pro).
-
----
-
-## 4. UI: lista detallada de lo que falta
-
-- **Auth**: login, registro, recuperar contraseña, "Continuar con Google".
-- **Onboarding**: conectar primer canal, permisos, tour.
-- **Inicio**: conectar respuestas reales del asistente (no simuladas).
-- **Bandeja**: paginación, marcar leído, abrir hilo, buscar de verdad (server).
-- **Detalle de mensaje / borrador**: ver y **editar** antes de enviar.
-- **Aprobaciones**: ejecutar de verdad + feedback de éxito/error.
-- **Prospectos**: que el lead score venga del modelo, no mock.
-- **Agenda**: sincronización real con calendario; crear/editar cita.
-- **Reglas**: guardar en `user_preferences`; validar entradas.
-- **Config**: conectar/desconectar canales reales; uso y facturación reales;
-  cerrar sesión; borrar cuenta (requerido por tiendas/legales).
-- **Transversal**: estados vacíos/carga/error, toasts, responsivo, accesibilidad,
-  modo claro pulido, íconos/branding finales, i18n si se quiere inglés después.
-
----
-
-## 5. Costos
-
-### 5.1 Para la **beta del MVP** (Gmail, web + escritorio, <100 usuarios)
-Deliberadamente casi gratis.
-
-| Concepto | Tipo | Costo estimado |
+| Componente | ¿Cuesta dinero? | Detalle |
 |---|---|---|
-| Dominio `.com` | Anual | ~$12–15/año |
-| Vercel | Mensual | $0 (Hobby) — presupuestar $20/mes si se exige plan comercial |
-| Supabase | Mensual | $0 (Free) — $25/mes (Pro) al crecer |
-| API de IA (Anthropic/OpenAI) | Por uso | ~$5–30/mes en beta (Haiku es barato) |
-| Google Cloud / Pub/Sub | Por uso | $0 (dentro de free tier) |
-| Logo/branding | Una vez | $0 (DIY) — $50–300 (freelancer) |
-| Legales (privacidad/términos) | Una vez | $0–100 (plantillas) — $300–800 (abogado) |
-| **Total beta** | | **≈ $15–115 una vez + $5–65/mes** |
+| Gmail (API + Pub/Sub) | **$0** | Gratis dentro del free tier. Ya está codificado. |
+| Outlook (Microsoft Graph) | **$0** | Registro de app en Azure AD gratis. |
+| WhatsApp (Cloud API) | **≈$0 en beta** | Por uso; volumen bajo cae casi gratis. Requiere *trámite* de verificación de negocio (no dinero) + un número dedicado. |
+| APIs de IA (Anthropic/OpenAI) | **Por uso, barato** | El grueso del presupuesto. Ver §4. |
+| Supabase / Vercel | **$0** | Planes free alcanzan para 30 usuarios. |
+| **Móvil (PWA)** | **$0** | Ya se instala en Android/iOS desde el navegador. |
+| Apps nativas de tienda | **$99/año Apple + $25 Play** | ⚠️ **NO sale de los $300** — se financia con el dinero de Founders. |
+| Verificación Google + CASA | **$1.000–4.500/año** | ⚠️ **NO se necesita para 30 founders** (ver §5). Se financia después. |
 
-### 5.2 Para **producción / escalar** (adicionales)
+**Conclusión:** con $300 se llega a un producto **100% funcional con los 3 canales
+y móvil vía PWA**. Las apps nativas de tienda y la verificación de Google llegan
+*después*, pagadas por los Founders. El costo real de esta fase es **tu tiempo de
+desarrollo**.
 
-| Concepto | Tipo | Costo estimado |
+---
+
+## 2. Presupuesto de los $300
+
+| Rubro | Monto | Nota |
 |---|---|---|
-| **Verificación Google + CASA** (scope restringido Gmail) | Anual | **~$1,000–$4,500/año** ⚠️ el mayor costo |
-| Apple Developer Program (iOS + firmar Mac) | Anual | $99/año |
-| Google Play Developer | Una vez | $25 |
-| Firma de código Windows (o Azure Trusted Signing) | Anual | ~$100–400/año (Azure ~$10/mes) |
-| WhatsApp Cloud API | Por uso | ~$0.005–0.08 por conversación (según país/categoría) + número |
-| Stripe (si se cobra) | Por transacción | 2.9% + $0.30, sin fijo |
-| Vercel Pro + Supabase Pro (al crecer) | Mensual | ~$45/mes combinado |
+| Dominio `.com` (año 1) | ~$12 | A veces hay promo a $1–10. |
+| Crédito de APIs de IA (runway) | ~$150 | Cubre varios meses de beta (Haiku es muy barato). |
+| Número/WhatsApp + misceláneos | ~$30 | Número dedicado, pruebas. |
+| Correo de dominio (opcional) | ~$0–36 | Reenvío gratis, o Google Workspace ~$6/mes. |
+| **Buffer / imprevistos** | ~$70–100 | Colchón. |
+| **Total** | **~$300** | Casi todo es *runway* de APIs. |
 
-### 5.3 App móvil (Capacitor — ruta recomendada)
-Reusa el 100% de la web. Costo directo: **Apple $99/año + Google $25 una vez**
-(ya contados arriba) + tiempo de desarrollo. No añade infraestructura nueva.
-
-> Nota: React Native/Expo sería **más caro en tiempo** (UI nativa aparte). Para
-> el MVP, Capacitor es lo básico y suficiente.
+> Supabase, Vercel, Gmail, Outlook y la PWA móvil van en **$0** durante la beta.
 
 ---
 
-## 6. Riesgos y "gotchas" (leer antes de presupuestar)
+## 3. Fases
 
-1. **Verificación de Google (CASA) es el mayor obstáculo.** El scope
-   `gmail.modify` es "restringido": para >100 usuarios exige una auditoría de
-   seguridad anual independiente. **Mitigación MVP:** lanzar en modo *testing*
-   (gratis, hasta 100 usuarios). Presupuestar CASA solo cuando la beta valide.
-2. **WhatsApp requiere verificación de negocio de Meta** (trámite, no dinero) y
-   su costo es por uso. No es trivial; por eso queda fuera del MVP inicial.
-3. **Firma de código:** sin firmar, Windows/macOS muestran advertencia al
-   instalar el escritorio. Funciona igual, pero para distribuir "en serio" se
-   necesita. La PWA/web no tiene este problema.
-4. **Legales no son opcionales:** Google exige Política de Privacidad publicada
-   y cumplimiento de Limited Use para aprobar el acceso a Gmail, incluso en beta.
-5. **Datos sensibles:** tocar correos de terceros obliga a una revisión de
-   seguridad y a minimizar datos (ya está en `docs/SECURITY.md`).
+### Fase A — Construir el producto 100% funcional (con los $300)
+El objetivo: que **funcione de verdad** para poder cobrar el Plan Founders.
+
+**A1. Fundaciones (barato, en paralelo)**
+- [ ] Nombre definitivo + **dominio** + logo/favicon (DIY, $0) + correo de soporte.
+- [ ] **Legales**: Política de Privacidad + Términos + cumplimiento *Limited Use*
+      de Google (obligatorio para Gmail, incluso en beta). Plantillas: ~$0.
+
+**A2. Autenticación + datos reales (mock → Supabase)**
+- [ ] Aplicar migraciones en Supabase; **Supabase Auth** (correo + "Con Google").
+- [ ] Implementar `src/lib/data/supabase.ts` → toda la UI pasa a datos reales
+      sin tocar componentes.
+- [ ] Cablear los 4 TODO: CommandBar, Aprobaciones, Reglas, botón Conectar.
+
+**A3. Los 3 canales en vivo**
+- [ ] **Gmail** (ya codificado): OAuth, cron de renovación del `watch`,
+      verificación del push, envío real. → *Prioridad 1.*
+- [ ] **WhatsApp** (Cloud API): OAuth/registro, adaptador real, envío. Alto valor
+      en CR/LatAm. → *Prioridad 2.* Requiere verificación de negocio de Meta.
+- [ ] **Outlook** (Graph): registro Azure AD, adaptador, envío. → *Prioridad 3.*
+
+**A4. Motor de IA real**
+- [ ] Triaje (Haiku) → redacción → cola de aprobaciones → **envío real** al aprobar.
+- [ ] Reglas del usuario aplicándose (VIP, bloqueados, tono).
+- [ ] Agendado: crear cita en la app + (si da el tiempo) Google Calendar.
+- [ ] **Límites por presupuesto** activados (protege tus unit economics).
+
+**A5. Pulido mínimo para cobrar**
+- [ ] Onboarding "conectá tu primer canal"; estados vacíos/carga/error.
+- [ ] Editar el borrador antes de aprobar; notificaciones cuando algo sube al humano.
+- [ ] Borrar cuenta / cerrar sesión; branding final aplicado.
+- [ ] **Cobro**: Stripe **Payment Link** (sin costo fijo; ver §6).
+
+### Fase B — Plan Founders (beta paga, validación + fondeo)
+- [ ] Publicar la app de Google en **"Producción" (sin verificar)** → hasta 100
+      usuarios, tokens de larga duración, **$0**. (Ver §5, es un punto crítico.)
+- [ ] Conseguir **~30 Founders** (ejecutivos de San José/Santa Ana, corredores de
+      Turrialba) pagando, p.ej., **$50/año** (precio de fundador).
+- [ ] Onboarding 1-a-1, recoger feedback, testimonios y casos reales.
+- [ ] Revisión de seguridad antes de operar correos de terceros.
+
+### Fase C — Producción / inversión (con el dinero de Founders)
+Financiado por los ~$1.500 de la beta:
+- [ ] **Verificación de Google + CASA** (para pasar de 100 usuarios sin el aviso
+      de "app no verificada"). Mayor costo del proyecto.
+- [ ] **Apps móviles nativas** con Capacitor → App Store / Play (Apple $99/año).
+- [ ] **Firma de código** del escritorio + auto-update con `electron-updater`.
+- [ ] Planes de pago recurrentes (Stripe Billing) y precios definitivos.
+- [ ] Con métricas de la beta: **subir precio** y/o **buscar inversión**.
 
 ---
 
-## 7. Cronograma estimado (1 desarrollador enfocado)
+## 4. Economía del Plan Founders
 
-| Fase | Duración aprox. |
+**Ingreso:** 30 × $50/año = **$1.500/año** (o más si el precio sube).
+
+**Costos anuales estimados con 30 usuarios activos:**
+
+| Rubro | Costo/año |
 |---|---|
-| Fase 0 — Marca y cuentas | 2–4 días (en paralelo) |
-| Fase 1 — Auth + datos reales | 1–2 semanas |
-| Fase 2 — Gmail en vivo + IA | 2–3 semanas |
-| Fase 3 — Pulido UI/UX | 1–2 semanas |
-| Fase 4 — Beta cerrada | continuo |
-| **Hasta beta usable** | **~5–8 semanas** |
-| Fase 5 — WhatsApp/Outlook/móvil/verificación | +3–6 semanas + tiempos de verificación de Google/Meta (semanas de espera) |
+| APIs de IA (triaje Haiku + redacción) | ~$150–500 |
+| Supabase / Vercel (free → Pro si hace falta) | ~$0–540 |
+| Dominio + WhatsApp (bajo volumen) | ~$30–120 |
+| **Total** | **~$180–1.160** |
+
+**Margen:** aun en el peor caso, la beta **cubre sus costos y deja excedente**
+para financiar la Fase C. Por usuario: $50/año ≈ $4,17/mes, contra un costo de IA
+de ~$0,50–2/usuario/mes → **margen bruto sano**.
+
+**Poder de precio:** un asistente humano cuesta cientos de dólares al mes. A
+$50/año esto es casi regalado; es un **precio de fundador** a cambio de feedback y
+testimonios. Con la validación, subir a **$100–200/año** sigue siendo barato y
+multiplica el margen. Ese es el argumento para inversión: producto que ahorra
+horas, con unit economics positivos desde el día uno.
 
 ---
 
-## 8. Recomendación de arranque
+## 5. ⚠️ El detalle crítico de Google (leer bien)
 
-Orden sugerido para el mayor valor con el menor gasto:
-1. **Fase 1 (Auth + datos reales)** — convierte la demo en app usable.
-2. **Fase 2 (Gmail en vivo)** — el producto empieza a ahorrar tiempo de verdad.
-3. **Fase 0 en paralelo** (dominio, logo, legales) — barato y necesario para beta.
-4. **Fase 3 + Fase 4** — pulir y poner en manos de 5–15 usuarios reales.
-5. Recién ahí evaluar Fase 5 (móvil, WhatsApp, verificación Google) con datos.
+Para un asistente de correo hay que entender los estados de la app de Google:
+
+- **"Testing":** hasta 100 usuarios, **pero los tokens caducan cada 7 días** →
+  el usuario tendría que reconectar Gmail cada semana. Inviable para producción.
+- **"Producción" (sin verificar):** tokens de **larga duración**, hasta ~**100
+  usuarios**. Muestran una pantalla de "Google no verificó esta app" que el
+  usuario acepta (*Configuración avanzada → Continuar*). **Costo: $0.**
+- **"Producción" + verificada (CASA):** sin aviso y **sin límite de usuarios**.
+  Requiere auditoría de seguridad anual (~$1.000–4.500/año).
+
+**Para los 30 Founders: publicamos en "Producción sin verificar".** Es gratis,
+los tokens duran, y 30 < 100. La verificación + CASA se pagan en la Fase C, ya
+con ingresos. **Este es el truco que hace viable el arranque con $300.**
+
+(WhatsApp: requiere verificación de negocio de Meta —trámite, no dinero—. Outlook:
+verificación de Microsoft, más liviana.)
+
+---
+
+## 6. Cómo cobrar a los Founders (barato)
+
+- **Stripe Payment Link** o **Lemon Squeezy**: sin costo mensual, solo comisión
+  por transacción (~2,9% + $0,30). Cobrar $50 × 30 cuesta ~$52 en comisiones
+  totales. **No hace falta construir facturación todavía.**
+- Se comparte un link de pago; al pagar, se activa la cuenta manualmente o con un
+  webhook simple. Stripe Billing (suscripciones) se deja para la Fase C.
+
+---
+
+## 7. Costos: resumen
+
+**Fase A + B (arranque, con los $300):**
+- Una vez: dominio ~$12, legales ~$0–100.
+- Por uso: APIs ~$15–50/mes (baja en beta).
+- Infra: $0 (planes free).
+- **≈ $300 cubre varios meses**, y a partir del mes ~1–2 la beta se autofinancia.
+
+**Fase C (escalar, con dinero de Founders / inversión):**
+- Verificación Google + CASA: ~$1.000–4.500/año.
+- Apple $99/año + Play $25 (una vez) + firma Windows ~$100–400/año.
+- Vercel Pro $20/mes + Supabase Pro $25/mes al crecer.
+
+---
+
+## 8. Cronograma estimado (1 desarrollador enfocado)
+
+| Fase | Duración |
+|---|---|
+| A1 Fundaciones (paralelo) | 2–4 días |
+| A2 Auth + datos reales | 1–2 semanas |
+| A3 Tres canales en vivo | 2–4 semanas (Gmail listo antes; WhatsApp/Outlook suman) |
+| A4 Motor IA real | 1 semana (código ya existe, afinar) |
+| A5 Pulido + cobro | 1–2 semanas |
+| **Hasta Founders paga** | **~5–9 semanas** |
+| B Beta Founders | continuo |
+| C Producción | según ingresos + tiempos de verificación (semanas) |
+
+---
+
+## 9. Recomendación de arranque
+
+1. **Fase A2 (Auth + Supabase)** — le da vida a toda la UI ya construida. $0.
+2. **Gmail en vivo** (A3-P1) — el producto ya ahorra tiempo real. $0.
+3. En paralelo, vos: **nombre + dominio + conseguir número de WhatsApp**.
+4. Sumar **WhatsApp** y **Outlook**, pulir, y montar el **link de pago**.
+5. Publicar en "Producción sin verificar" y salir a buscar los **30 Founders**.
+6. Con ese dinero: verificación Google, apps nativas y/o inversión.
+
+El presupuesto no es el cuello de botella; **el tiempo de desarrollo lo es**. Los
+$300 alcanzan de sobra para llegar a cobrar.
