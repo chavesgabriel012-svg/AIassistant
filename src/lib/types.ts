@@ -24,6 +24,13 @@ export interface IncomingMessage {
   sender?: string;
   subject?: string;
   body: string;
+  // --- Metadatos de proveedor (opcionales) para poder responder en el hilo ---
+  /** Conexión (cuenta) por la que entró el mensaje; define con qué token responder. */
+  connectionId?: string;
+  /** Id del hilo en el proveedor (Gmail threadId). */
+  providerThreadId?: string;
+  /** Header RFC822 Message-ID del original (para In-Reply-To / References). */
+  providerMessageId?: string;
 }
 
 /** Salida estructurada que exigimos al modelo de triaje. */
